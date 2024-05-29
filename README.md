@@ -50,78 +50,48 @@ To run the integration tests, use the command `mvn clean install -Pintegration-l
 
 
 ```
-WITH ActiveAPIVersions AS (
-    SELECT
-        av.ID AS API_VERSION_ID,
-        av.VERSION,
-        av.API_ID,
-        a.NAME AS API_NAME,
-        SUBSTR(av.VERSION, 1, INSTR(av.VERSION, '-') - 1) AS APIVERSION
-    FROM
-        API_VERSION av
-    JOIN
-        API a ON av.API_ID = a.ID
-    WHERE
-        av.DELETED = 'FALSE' AND a.DELETE = 'FALSE'
-),
-ValidAPIVersions AS (
-    SELECT
-        av.API_VERSION_ID,
-        av.VERSION,
-        av.API_ID,
-        av.API_NAME
-    FROM
-        ActiveAPIVersions av
-    LEFT JOIN (
-        SELECT
-            API_ID,
-            APIVERSION
-        FROM
-            ActiveAPIVersions
-        GROUP BY
-            API_ID,
-            APIVERSION
-        HAVING
-            COUNT(API_VERSION_ID) > 1
-    ) av2 ON av.API_ID = av2.API_ID AND av.APIVERSION = av2.APIVERSION
-    WHERE
-        av2.API_ID IS NULL
-),
-FilteredAPIVersions AS (
-    SELECT
-        av.*
-    FROM
-        ValidAPIVersions av
-    LEFT JOIN
-        API_VERSION av2 ON av.API_ID = av2.API_ID AND av2.VERSION LIKE '%-1.14' AND av2.DELETED = 'FALSE'
-    WHERE
-        av2.ID IS NULL
-)
 SELECT
     a.ID AS API_ID,
     a.NAME AS API_NAME,
-    av.API_VERSION_ID,
+    av.ID AS API_VERSION_ID,
     av.VERSION
 FROM
-    FilteredAPIVersions av
-JOIN
-    DEPLOYMENT_HISTORY dh ON av.API_VERSION_ID = dh.API_VERSION_ID
-JOIN
-    ENVIRONMENT e ON dh.ENV_ID = e.ID
+    API_VERSION av
 JOIN
     API a ON av.API_ID = a.ID
+JOIN
+    DEPLOYMENT_HISTORY dh ON av.ID = dh.API_VERSION_ID
+JOIN
+    ENVIRONMENT e ON dh.ENV_ID = e.ID
 WHERE
-    e.TYPE = :env_type
-AND
-    NVL(a.DELETE, 'FALSE') = 'FALSE'
+    av.DELETED = 'FALSE'
+    AND a.DELETE = 'FALSE'
+    AND e.TYPE = :env_type
+    AND NOT EXISTS (
+        SELECT 1
+        FROM API_VERSION av2
+        WHERE av2.API_ID = av.API_ID
+          AND SUBSTR(av2.VERSION, 1, INSTR(av2.VERSION, '-') - 1) = SUBSTR(av.VERSION, 1, INSTR(av.VERSION, '-') - 1)
+          AND av2.DELETED = 'FALSE'
+          AND av2.ID != av.ID
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM API_VERSION av3
+        WHERE av3.API_ID = av.API_ID
+          AND av3.VERSION LIKE '%-1.14'
+          AND av3.DELETED = 'FALSE'
+    )
 GROUP BY
     a.ID,
     a.NAME,
-    av.API_VERSION_ID,
+    av.ID,
     av.VERSION
 ORDER BY
     a.NAME,
-    av.VERSION;```
+    av.VERSION;
+
+```
 
 
 
