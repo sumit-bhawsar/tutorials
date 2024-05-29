@@ -49,6 +49,64 @@ The command `mvn clean install` will run the unit tests in a module.
 To run the integration tests, use the command `mvn clean install -Pintegration-lite-first`
 
 
+```
+WITH ActiveAPIVersions AS (
+    SELECT
+        av.ID,
+        av.VERSION,
+        av.API_ID,
+        a.NAME AS API_NAME
+    FROM
+        API_VERSION av
+    JOIN
+        API a ON av.API_ID = a.ID
+    WHERE
+        av.DELETED = 'FALSE'
+    GROUP BY
+        av.ID,
+        av.VERSION,
+        av.API_ID,
+        a.NAME
+    HAVING
+        COUNT(CASE WHEN av.DELETED = 'TRUE' THEN 1 END) = 0
+),
+FilteredAPIVersions AS (
+    SELECT
+        av.*
+    FROM
+        ActiveAPIVersions av
+    LEFT JOIN
+        API_VERSION av2 ON av.API_ID = av2.API_ID AND av2.VERSION LIKE '%-2.4' AND av2.DELETED = 'FALSE'
+    WHERE
+        av2.ID IS NULL
+)
+SELECT
+    a.ID AS API_ID,
+    a.NAME AS API_NAME,
+    av.ID AS API_VERSION_ID,
+    av.VERSION
+FROM
+    FilteredAPIVersions av
+JOIN
+    DEPLOYMENT_HISTORY dh ON av.ID = dh.API_VERSION_ID
+JOIN
+    ENVIRONMENT e ON dh.ENV_ID = e.ID
+JOIN
+    API a ON av.API_ID = a.ID
+WHERE
+    e.TYPE = 'sit'
+AND
+    NVL(a.DELETED, 'FALSE') = 'FALSE'
+GROUP BY
+    a.ID,
+    a.NAME,
+    av.ID,
+    av.VERSION
+ORDER BY
+    a.NAME,
+    av.VERSION;
+
+```
 
 
 
