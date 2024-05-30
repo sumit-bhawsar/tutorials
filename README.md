@@ -78,9 +78,44 @@ WHERE
     AND NOT EXISTS (
         SELECT 1
         FROM API_VERSION av3
+        JOIN DEPLOYMENT_HISTORY dh2 ON av3.ID = dh2.API_VERSION_ID
+        JOIN ENVIRONMENT e2 ON dh2.ENV_ID = e2.ID
         WHERE av3.API_ID = av.API_ID
           AND av3.VERSION LIKE '%-1.14'
           AND av3.DELETED = 'FALSE'
+          AND e2.TYPE = :env_type
+    )
+GROUP BY
+    a.ID,
+    a.NAME,
+    av.ID,
+    av.VERSION
+UNION
+SELECT
+    a.ID AS API_ID,
+    a.NAME AS API_NAME,
+    av.ID AS API_VERSION_ID,
+    av.VERSION
+FROM
+    API_VERSION av
+JOIN
+    API a ON av.API_ID = a.ID
+LEFT JOIN
+    DEPLOYMENT_HISTORY dh ON av.ID = dh.API_VERSION_ID
+LEFT JOIN
+    ENVIRONMENT e ON dh.ENV_ID = e.ID
+WHERE
+    av.DELETED = 'FALSE'
+    AND a.DELETE = 'FALSE'
+    AND e.TYPE IS NULL
+    AND av.VERSION LIKE '%-1.14'
+    AND NOT EXISTS (
+        SELECT 1
+        FROM API_VERSION av2
+        WHERE av2.API_ID = av.API_ID
+          AND SUBSTR(av2.VERSION, 1, INSTR(av2.VERSION, '-') - 1) = SUBSTR(av.VERSION, 1, INSTR(av.VERSION, '-') - 1)
+          AND av2.DELETED = 'FALSE'
+          AND av2.ID != av.ID
     )
 GROUP BY
     a.ID,
@@ -88,8 +123,9 @@ GROUP BY
     av.ID,
     av.VERSION
 ORDER BY
-    a.NAME,
-    av.VERSION;
+    API_NAME,
+    VERSION;
+
 
 ```
 
