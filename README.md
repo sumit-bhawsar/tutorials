@@ -50,77 +50,87 @@ To run the integration tests, use the command `mvn clean install -Pintegration-l
 
 
 ```
-WITH ActiveAPIVersions AS (
+-- Step 1: Create mapping tables
+CREATE TABLE cluster_mapping (
+    old_cluster_id NUMBER,
+    new_cluster_id NUMBER
+);
+
+CREATE TABLE environment_mapping (
+    old_environment_id NUMBER,
+    new_environment_id NUMBER
+);
+
+CREATE TABLE datacentre_mapping (
+    old_datacentre_id NUMBER,
+    new_datacentre_id NUMBER
+);
+
+-- Step 2: Populate mapping tables
+INSERT INTO cluster_mapping (old_cluster_id, new_cluster_id)
+SELECT old.cluster_id, new.cluster_id
+FROM CLUSTER old
+JOIN CLUSTER_V2 new ON old.cluster_name = new.cluster_name; -- Adjust the join condition as per your logic
+
+INSERT INTO environment_mapping (old_environment_id, new_environment_id)
+SELECT old.environment_id, new.environment_id
+FROM ENVIRONMENT old
+JOIN ENVIRONMENT_V2 new ON old.environment_name = new.environment_name; -- Adjust the join condition as per your logic
+
+INSERT INTO datacentre_mapping (old_datacentre_id, new_datacentre_id)
+SELECT old.datacentre_id, new.datacentre_id
+FROM DATACENTRE old
+JOIN DATACENTRE_V2 new ON old.datacentre_name = new.datacentre_name; -- Adjust the join condition as per your logic
+
+-- Step 3: Migrate data to DEPLOYMENT_V2
+INSERT INTO DEPLOYMENT_V2 (deployment_id, cluster_id, environment_id, datacentre_id, other_columns) -- Replace with actual column names
+SELECT
+    d.deployment_id,
+    cm.new_cluster_id,
+    em.new_environment_id,
+    dm.new_datacentre_id,
+    d.other_columns -- Replace with actual column names
+FROM
+    DEPLOYMENT d
+JOIN
+    cluster_mapping cm ON d.cluster_id = cm.old_cluster_id
+JOIN
+    environment_mapping em ON d.environment_id = em.old_environment_id
+JOIN
+    datacentre_mapping dm ON d.datacentre_id = dm.old_datacentre_id;
+
+
+
+-- Step 1: Add columns to the version table
+ALTER TABLE version ADD (instances NUMBER, capacity VARCHAR2(2));
+
+-- Step 2: Migrate the first non-null occurrence of instances and capacity from the capacity table to the version table
+MERGE INTO version v
+USING (
     SELECT
-        av.ID AS API_VERSION_ID,
-        av.VERSION,
-        av.API_ID,
-        SUBSTR(av.VERSION, 1, INSTR(av.VERSION, '-') - 1) AS APIVERSION
-    FROM
-        API_VERSION av
-    JOIN
-        API a ON av.API_ID = a.ID
-    WHERE
-        av.DELETED = 'FALSE'
-        AND a.DELETE = 'FALSE'
-),
-ValidAPIVersions AS (
-    SELECT
-        av.API_VERSION_ID,
-        av.VERSION,
-        av.API_ID,
-        av.APIVERSION
-    FROM
-        ActiveAPIVersions av
-    LEFT JOIN (
+        version_id,
+        instances,
+        capacity
+    FROM (
         SELECT
-            API_ID,
-            APIVERSION
+            version_id,
+            instances,
+            capacity,
+            ROW_NUMBER() OVER (PARTITION BY version_id ORDER BY (CASE WHEN instances IS NOT NULL THEN 0 ELSE 1 END), (CASE WHEN capacity IS NOT NULL THEN 0 ELSE 1 END)) AS rn
         FROM
-            ActiveAPIVersions
-        GROUP BY
-            API_ID,
-            APIVERSION
-        HAVING
-            COUNT(API_VERSION_ID) > 1
-    ) av2 ON av.API_ID = av2.API_ID AND av.APIVERSION = av2.APIVERSION
-    WHERE
-        av2.API_ID IS NULL
-)
-SELECT
-    a.ID AS API_ID,
-    a.NAME AS API_NAME,
-    av.API_VERSION_ID,
-    av.VERSION
-FROM
-    ValidAPIVersions av
-JOIN
-    DEPLOYMENT_HISTORY dh ON av.API_VERSION_ID = dh.API_VERSION_ID
-JOIN
-    ENVIRONMENT e ON dh.ENV_ID = e.ID
-JOIN
-    API a ON av.API_ID = a.ID
-WHERE
-    e.TYPE = :env_type
-    AND av.VERSION NOT LIKE '%-1.14'
-UNION
-SELECT
-    a.ID AS API_ID,
-    a.NAME AS API_NAME,
-    av.API_VERSION_ID,
-    av.VERSION
-FROM
-    API_VERSION av
-JOIN
-    API a ON av.API_ID = a.ID
-LEFT JOIN
-    DEPLOYMENT_HISTORY dh ON av.ID = dh.API_VERSION_ID AND dh.ENV_ID = (SELECT ID FROM ENVIRONMENT WHERE TYPE = :env_type)
-WHERE
-    av.DELETED = 'FALSE'
-    AND a.DELETE = 'FALSE'
-    AND av.VERSION LIKE '%-1.14'
-    AND dh.API_VERSION_ID IS NULL
-ORDER BY
-    API_NAME,
-    VERSION;
+            capacity
+    )
+    WHERE rn = 1
+) rc
+ON (v.id = rc.version_id)
+WHEN MATCHED THEN
+UPDATE SET
+    v.instances = rc.instances,
+    v.capacity = rc.capacity;
+
+-- Step 3: Drop the capacity table
+DROP TABLE capacity;
+
 ```
+
+
