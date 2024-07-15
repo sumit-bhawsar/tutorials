@@ -132,5 +132,89 @@ UPDATE SET
 DROP TABLE capacity;
 
 ```
+## store proc
+```
+CREATE OR REPLACE PROCEDURE GetValidAPIVersions(
+    p_env_type IN VARCHAR2
+)
+IS
+    TYPE VersionRec IS RECORD (
+        api_id NUMBER,
+        api_name VARCHAR2(255),
+        api_version_id NUMBER,
+        version VARCHAR2(255)
+    );
+
+    TYPE VersionTable IS TABLE OF VersionRec;
+
+    v_versions VersionTable;
+
+BEGIN
+    -- Fetch data into the collection
+    WITH ActiveAPIVersions AS (
+        SELECT
+            av.ID AS API_VERSION_ID,
+            av.VERSION,
+            av.API_ID,
+            SUBSTR(av.VERSION, 1, INSTR(av.VERSION, '-') - 1) AS APIVERSION
+        FROM
+            API_VERSION av
+        JOIN
+            API a ON av.API_ID = a.ID
+        WHERE
+            av.DELETED = 'FALSE'
+            AND a.DELETE = 'FALSE'
+    ),
+    ValidAPIVersions AS (
+        SELECT
+            av.API_VERSION_ID,
+            av.VERSION,
+            av.API_ID,
+            av.APIVERSION
+        FROM
+            ActiveAPIVersions av
+        LEFT JOIN (
+            SELECT
+                API_ID,
+                APIVERSION
+            FROM
+                ActiveAPIVersions
+            GROUP BY
+                API_ID,
+                APIVERSION
+            HAVING
+                COUNT(API_VERSION_ID) > 1
+        ) av2 ON av.API_ID = av2.API_ID AND av.APIVERSION = av2.APIVERSION
+        WHERE
+            av2.API_ID IS NULL
+    )
+    SELECT
+        a.ID AS api_id,
+        a.NAME AS api_name,
+        av.API_VERSION_ID AS api_version_id,
+        av.VERSION AS version
+    BULK COLLECT INTO v_versions
+    FROM
+        ValidAPIVersions av
+    JOIN
+        DEPLOYMENT_HISTORY dh ON av.API_VERSION_ID = dh.API_VERSION_ID
+    JOIN
+        ENVIRONMENT e ON dh.ENV_ID = e.ID
+    JOIN
+        API a ON av.API_ID = a.ID
+    WHERE
+        e.TYPE = p_env_type
+        AND av.VERSION NOT LIKE '%-1.14';
+
+    -- Process the collection
+    FOR i IN 1 .. v_versions.COUNT LOOP
+        DBMS_OUTPUT.PUT_LINE('API ID: ' || v_versions(i).api_id || 
+                             ', API Name: ' || v_versions(i).api_name || 
+                             ', API Version ID: ' || v_versions(i).api_version_id || 
+                             ', Version: ' || v_versions(i).version);
+    END LOOP;
+END GetValidAPIVersions;
+/
+```
 
 
