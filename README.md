@@ -337,3 +337,136 @@ public class WireMockExample {
 ```
 
 With this setup, the WireMock server will dynamically update and return the `balance` and `itemCount` based on the incoming POST requests to `/transaction` and `/item` respectively.
+
+
+Yes, you can add custom fields to WireMock mappings and use them in a custom extension to handle dynamic values like balance and item counts. Here’s how you can achieve this:
+
+1. **Extend WireMock with a Custom ResponseTransformer**:
+   - Add fields to your mappings that indicate dynamic values.
+   - Implement a custom `ResponseTransformer` to process these fields and update the state accordingly.
+
+### Step-by-Step Implementation
+
+1. **Add WireMock to Your Project**:
+   Ensure you have WireMock included in your project's dependencies. For Maven:
+   ```xml
+   <dependency>
+       <groupId>com.github.tomakehurst</groupId>
+       <artifactId>wiremock-jre8</artifactId>
+       <version>2.31.0</version>
+       <scope>test</scope>
+   </dependency>
+   ```
+
+2. **Create a Custom ResponseTransformer**:
+   This class will handle the dynamic fields and update the state.
+
+   ```java
+   import com.github.tomakehurst.wiremock.extension.Parameters;
+   import com.github.tomakehurst.wiremock.extension.ResponseDefinitionTransformer;
+   import com.github.tomakehurst.wiremock.http.Request;
+   import com.github.tomakehurst.wiremock.http.ResponseDefinition;
+   import com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder;
+   import com.github.tomakehurst.wiremock.common.FileSource;
+   import com.github.tomakehurst.wiremock.stubbing.StubMapping;
+
+   import java.util.concurrent.atomic.AtomicInteger;
+   import java.util.Map;
+   import java.util.concurrent.ConcurrentHashMap;
+
+   public class CustomResponseTransformer extends ResponseDefinitionTransformer {
+       private final AtomicInteger balance = new AtomicInteger(1000); // Initial balance
+       private final AtomicInteger itemCount = new AtomicInteger(0); // Initial item count
+       private final Map<String, AtomicInteger> dynamicFields = new ConcurrentHashMap<>();
+
+       @Override
+       public ResponseDefinition transform(Request request, ResponseDefinition responseDefinition, FileSource files, Parameters parameters) {
+           String dynamicField = parameters.getString("dynamicField");
+
+           if (dynamicField != null) {
+               String requestBody = request.getBodyAsString();
+               int amount = Integer.parseInt(requestBody);
+
+               AtomicInteger field = dynamicFields.computeIfAbsent(dynamicField, k -> new AtomicInteger(0));
+               field.addAndGet(amount);
+
+               return ResponseDefinitionBuilder
+                       .like(responseDefinition)
+                       .withBody("{\"" + dynamicField + "\": " + field.get() + "}")
+                       .build();
+           }
+
+           return responseDefinition;
+       }
+
+       @Override
+       public String getName() {
+           return "custom-response-transformer";
+       }
+
+       @Override
+       public boolean applyGlobally() {
+           return false;
+       }
+   }
+   ```
+
+3. **Register and Use the Transformer in WireMock**:
+   Configure WireMock to use the custom transformer and define the mappings with the custom fields.
+
+   ```java
+   import com.github.tomakehurst.wiremock.WireMockServer;
+   import com.github.tomakehurst.wiremock.client.WireMock;
+   import com.github.tomakehurst.wiremock.common.ConsoleNotifier;
+
+   public class WireMockExample {
+       public static void main(String[] args) {
+           WireMockServer wireMockServer = new WireMockServer();
+           wireMockServer.start();
+
+           wireMockServer.getOptions().extensions(new CustomResponseTransformer());
+
+           // Balance endpoint
+           wireMockServer.stubFor(WireMock.post(WireMock.urlEqualTo("/transaction"))
+                   .willReturn(WireMock.aResponse()
+                           .withTransformers("custom-response-transformer")
+                           .withTransformerParameter("dynamicField", "balance")));
+
+           // Item endpoint
+           wireMockServer.stubFor(WireMock.post(WireMock.urlEqualTo("/item"))
+                   .willReturn(WireMock.aResponse()
+                           .withTransformers("custom-response-transformer")
+                           .withTransformerParameter("dynamicField", "itemCount")));
+
+           Runtime.getRuntime().addShutdownHook(new Thread(wireMockServer::stop));
+           System.out.println("WireMock server running. Press Ctrl+C to stop.");
+           try {
+               Thread.sleep(Long.MAX_VALUE);
+           } catch (InterruptedException e) {
+               Thread.currentThread().interrupt();
+           }
+       }
+   }
+   ```
+
+### Testing with Curl
+```sh
+# Add a credit transaction of 100 to balance
+curl -X POST http://localhost:8080/transaction -d "100"
+
+# Add an item (increment by 1)
+curl -X POST http://localhost:8080/item -d "1"
+
+# Check the balance
+curl http://localhost:8080/transaction
+
+# Check the item count
+curl http://localhost:8080/item
+```
+
+### Explanation:
+1. **Custom ResponseTransformer**: Handles requests and dynamically updates fields based on incoming request parameters.
+2. **Dynamic Fields**: Uses a `Map` to store and update dynamic fields like balance and itemCount.
+3. **Transformer Parameters**: Specifies which field to update through `withTransformerParameter`.
+
+This setup allows you to handle different dynamic fields by adding custom parameters to the stub mappings, making your mock server more flexible and powerful.
