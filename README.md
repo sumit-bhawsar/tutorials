@@ -470,3 +470,95 @@ curl http://localhost:8080/item
 3. **Transformer Parameters**: Specifies which field to update through `withTransformerParameter`.
 
 This setup allows you to handle different dynamic fields by adding custom parameters to the stub mappings, making your mock server more flexible and powerful.
+
+
+To create a standalone JAR with WireMock and a custom transformer using Gradle, you can follow these steps:
+
+1. **Create the Custom Transformer Class**:
+   Ensure your transformer class (e.g., `CustomResponseTransformer`) is implemented in a package, as described in the previous responses.
+
+2. **Create a Main Class**:
+   Implement a main class that starts the WireMock server and registers the custom transformer.
+
+3. **Set Up Your `build.gradle`**:
+   Configure the Gradle build script to include the necessary dependencies and package the application as a standalone JAR with all dependencies.
+
+4. **Build the JAR**:
+   Use Gradle to compile and package the JAR.
+
+5. **Run the Standalone JAR**:
+   Execute the JAR file to start the WireMock server with the custom transformer.
+
+### Detailed Steps
+
+#### 1. Implement the Custom Transformer and Main Class
+
+Ensure the classes are implemented as described earlier, with proper package names. For example, the `CustomResponseTransformer` should be in the `com.example.transformer` package, and the main class should be in the `com.example.main` package.
+
+#### 2. Set Up Your `build.gradle`
+
+Here's an example `build.gradle` file:
+
+```gradle
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group 'com.example'
+version '1.0-SNAPSHOT'
+
+sourceCompatibility = '1.8'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.github.tomakehurst:wiremock-jre8:2.31.0'
+}
+
+application {
+    mainClass = 'com.example.main.WireMockStandalone'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.example.main.WireMockStandalone'
+    }
+
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+```
+
+#### 3. Build the JAR
+
+To build the JAR, run the following command in your project directory:
+
+```sh
+./gradlew clean build
+```
+
+This command will create the JAR file with all dependencies included.
+
+#### 4. Run the Standalone JAR
+
+Navigate to the `build/libs` directory and run the JAR file:
+
+```sh
+java -jar wiremock-transformer-1.0-SNAPSHOT.jar
+```
+
+This will start the WireMock server with your custom transformer.
+
+### Explanation
+
+- **Plugins**: The `java` plugin is used to compile Java code, and the `application` plugin is used to specify the main class.
+- **Dependencies**: The `wiremock-jre8` dependency includes WireMock with Java 8 compatibility.
+- **Application Configuration**: The `application` block specifies the main class to run the application.
+- **JAR Configuration**: The `jar` block configures the manifest and ensures all runtime dependencies are included in the final JAR.
+
+This setup should create a standalone JAR that includes all necessary dependencies and your custom transformer, making it easy to run WireMock with your custom logic.
