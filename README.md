@@ -217,4 +217,123 @@ END GetValidAPIVersions;
 /
 ```
 
+To define the WireMock stub mappings in JSON format for handling dynamic fields like `balance` and `itemCount`, you can use the `transformerParameters` field to specify the custom parameters for each endpoint. Here is how you can set up the stub mappings in JSON:
 
+1. **Balance Endpoint Mapping**:
+   ```json
+   {
+     "request": {
+       "method": "POST",
+       "url": "/transaction"
+     },
+     "response": {
+       "status": 200,
+       "body": "{\"balance\": 0}",
+       "transformers": ["custom-response-transformer"],
+       "transformerParameters": {
+         "dynamicField": "balance"
+       },
+       "headers": {
+         "Content-Type": "application/json"
+       }
+     }
+   }
+   ```
+
+2. **Item Endpoint Mapping**:
+   ```json
+   {
+     "request": {
+       "method": "POST",
+       "url": "/item"
+     },
+     "response": {
+       "status": 200,
+       "body": "{\"itemCount\": 0}",
+       "transformers": ["custom-response-transformer"],
+       "transformerParameters": {
+         "dynamicField": "itemCount"
+       },
+       "headers": {
+         "Content-Type": "application/json"
+       }
+     }
+   }
+   ```
+
+### Full JSON Configuration Example
+Here's a full example with both mappings included:
+
+```json
+[
+  {
+    "request": {
+      "method": "POST",
+      "url": "/transaction"
+    },
+    "response": {
+      "status": 200,
+      "body": "{\"balance\": 0}",
+      "transformers": ["custom-response-transformer"],
+      "transformerParameters": {
+        "dynamicField": "balance"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  },
+  {
+    "request": {
+      "method": "POST",
+      "url": "/item"
+    },
+    "response": {
+      "status": 200,
+      "body": "{\"itemCount\": 0}",
+      "transformers": ["custom-response-transformer"],
+      "transformerParameters": {
+        "dynamicField": "itemCount"
+      },
+      "headers": {
+        "Content-Type": "application/json"
+      }
+    }
+  }
+]
+```
+
+### Loading JSON Mappings
+To load these mappings into WireMock, save the JSON configuration to files in the `mappings` directory of your WireMock setup. For example:
+
+- Save the balance mapping as `transaction-mapping.json`.
+- Save the item mapping as `item-mapping.json`.
+
+WireMock will automatically load these mappings when it starts.
+
+### Running WireMock
+Ensure your `WireMockExample` class includes the following code to start the WireMock server and load the extensions:
+
+```java
+import com.github.tomakehurst.wiremock.WireMockServer;
+
+public class WireMockExample {
+    public static void main(String[] args) {
+        WireMockServer wireMockServer = new WireMockServer();
+        wireMockServer.start();
+
+        // Register the custom transformer
+        wireMockServer.getOptions().extensions(new CustomResponseTransformer());
+
+        Runtime.getRuntime().addShutdownHook(new Thread(wireMockServer::stop));
+        System.out.println("WireMock server running. Press Ctrl+C to stop.");
+        try {
+            Thread.sleep(Long.MAX_VALUE);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+With this setup, the WireMock server will dynamically update and return the `balance` and `itemCount` based on the incoming POST requests to `/transaction` and `/item` respectively.
