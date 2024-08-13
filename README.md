@@ -562,3 +562,94 @@ This will start the WireMock server with your custom transformer.
 - **JAR Configuration**: The `jar` block configures the manifest and ensures all runtime dependencies are included in the final JAR.
 
 This setup should create a standalone JAR that includes all necessary dependencies and your custom transformer, making it easy to run WireMock with your custom logic.
+If your Nexus credentials are stored in Jenkins credentials, you can securely access them within your Jenkins pipeline using the `withCredentials` block. Here's how you can modify the script to utilize the Jenkins credentials for Nexus:
+
+### Updated Jenkins Pipeline Script
+
+```groovy
+pipeline {
+    agent any
+
+    parameters {
+        file(name: 'CSV_FILE', description: 'Upload the CSV file containing group ID, artifact ID, old namespace, new namespace, and version')
+    }
+
+    environment {
+        NEXUS_URL = 'http://your-nexus-repo-url' // Replace with your Nexus repository URL
+        CREDENTIALS_ID = 'nexus-credentials' // Jenkins credentials ID for Nexus
+    }
+
+    stages {
+        stage('Process CSV') {
+            steps {
+                script {
+                    // Ensure the CSV file is provided
+                    if (!params.CSV_FILE) {
+                        error "CSV file not provided!"
+                    }
+
+                    // Read the CSV file content
+                    def csvFilePath = params.CSV_FILE
+                    def csvFile = readCSV(csvFilePath)
+
+                    // Use Jenkins credentials for Nexus authentication
+                    withCredentials([usernamePassword(credentialsId: env.CREDENTIALS_ID, usernameVariable: 'NEXUS_USERNAME', passwordVariable: 'NEXUS_PASSWORD')]) {
+                        csvFile.each { line ->
+                            def groupId = line.group_id
+                            def artifactId = line.artifact_id
+                            def oldNamespace = line.old_namespace
+                            def newNamespace = line.new_namespace
+                            def version = line.version
+
+                            def artifactPath = groupId.replace('.', '/') + '/' + artifactId + '/' + version + '/' + artifactId + '-' + version + '.jar'
+
+                            // Download JAR from old namespace
+                            def downloadUrl = "${NEXUS_URL}/repository/${oldNamespace}/${artifactPath}"
+                            def jarFile = "${artifactId}-${version}.jar"
+                            sh "curl -u ${NEXUS_USERNAME}:${NEXUS_PASSWORD} -O ${downloadUrl}"
+
+                            // Upload JAR to new namespace
+                            def uploadUrl = "${NEXUS_URL}/repository/${newNamespace}/"
+                            sh """
+                                curl -u ${NEXUS_USERNAME}:${NEXUS_PASSWORD} --upload-file ${jarFile} ${uploadUrl}/${artifactPath}
+                            """
+
+                            // Clean up the downloaded file
+                            sh "rm -f ${jarFile}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+def readCSV(filePath) {
+    def lines = readFile(filePath).split("\n")
+    def header = lines[0].split(",")
+    def rows = lines.drop(1).collect { it.split(",") }
+    return rows.collect { row -> header.zip(row).collectEntries { [(it[0]): it[1]] } }
+}
+```
+
+### Key Changes and Explanation:
+
+1. **Environment Variables for Credentials:**
+   - `CREDENTIALS_ID`: This is the Jenkins credentials ID where the Nexus username and password are stored.
+
+2. **withCredentials Block:**
+   - This block retrieves the Nexus username and password from the Jenkins credentials store using the `credentialsId` defined in the environment variables.
+   - `usernameVariable: 'NEXUS_USERNAME'` and `passwordVariable: 'NEXUS_PASSWORD'` are used to store the credentials in environment variables that can be accessed within the script.
+
+3. **Using the Credentials:**
+   - The `NEXUS_USERNAME` and `NEXUS_PASSWORD` environment variables are used in the `curl` commands for both downloading and uploading the artifacts.
+
+### Jenkins Credentials Setup:
+- Ensure that the Nexus credentials (username and password) are stored in Jenkins under the specified `CREDENTIALS_ID`. You can do this by:
+  1. Navigating to **Manage Jenkins** > **Manage Credentials**.
+  2. Adding a new **Username with password** credential and giving it the ID `nexus-credentials` (or whatever ID you specify in the script).
+
+### Running the Job:
+- When you run the job, it will securely retrieve the Nexus credentials from Jenkins, use them to authenticate against Nexus, and handle the artifacts as specified in the CSV file.
+
+This setup ensures that your Nexus credentials are managed securely within Jenkins and aren't exposed directly in your pipeline script.
