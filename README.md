@@ -709,3 +709,80 @@ pipeline {
     }
 }
 ```
+
+
+```
+import com.cloudbees.plugins.credentials.Credentials
+import com.cloudbees.plugins.credentials.CredentialsScope
+import com.cloudbees.plugins.credentials.domains.Domain
+import com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+
+pipeline {
+    agent any
+    parameters {
+        string(name: 'USERNAME', description: 'Username for authentication')
+        password(name: 'PASSWORD', description: 'Password for authentication')
+        string(name: 'ID', description: 'ID of the resource to delete')
+    }
+    environment {
+        CREDENTIALS_ID = "dynamic-creds-${UUID.randomUUID().toString()}"
+        TOKEN_API_URL = 'https://api.example.com/auth/token'
+        DELETE_API_URL = 'https://api.example.com/resources'
+    }
+    stages {
+        stage('Create Credentials') {
+            steps {
+                script {
+                    // Create the credentials object dynamically using the provided parameters
+                    def usernamePasswordCredentials = new UsernamePasswordCredentialsImpl(
+                        CredentialsScope.GLOBAL,
+                        env.CREDENTIALS_ID,
+                        "Temporary credentials for pipeline",
+                        params.USERNAME,
+                        params.PASSWORD
+                    )
+
+                    // Add the credentials to the system credentials provider
+                    SystemCredentialsProvider.getInstance().getStore().addCredentials(
+                        Domain.global(),
+                        usernamePasswordCredentials
+                    )
+                }
+            }
+        }
+
+        stage('Generate Token') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: env.CREDENTIALS_ID, usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                        // Make an API request to get the token
+                        def tokenResponse = sh(
+                            script: """
+                                curl -X POST "${TOKEN_API_URL}" \
+                                -H "Content-Type: application/json" \
+                                -d '{ "username": "${USERNAME}", "password": "${PASSWORD}" }' \
+                                --silent --show-error --fail
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        // Parse the JSON response to extract the token
+                        def token = readJSON(text: tokenResponse).token
+                        echo "Token successfully generated."
+
+                        // Store the token for the next stage
+                        env.TOKEN = token
+                    }
+                }
+            }
+        }
+
+        stage('Delete Resource') {
+            steps {
+                script {
+                    // Define the API URL for deleting the resource
+                    def deleteApiUrl = "${DELETE_API_URL}/${params.ID}"
+                    
+                    // Make an API request to delete
+```
