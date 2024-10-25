@@ -653,3 +653,59 @@ def readCSV(filePath) {
 - When you run the job, it will securely retrieve the Nexus credentials from Jenkins, use them to authenticate against Nexus, and handle the artifacts as specified in the CSV file.
 
 This setup ensures that your Nexus credentials are managed securely within Jenkins and aren't exposed directly in your pipeline script.
+
+
+```
+pipeline {
+    agent any
+    parameters {
+        string(name: 'USERNAME', description: 'Username for authentication')
+        password(name: 'PASSWORD', description: 'Password for authentication')
+        string(name: 'ID', description: 'ID of the resource to delete')
+    }
+    stages {
+        stage('Generate Token') {
+            steps {
+                script {
+                    // Define the API URL for token generation
+                    def tokenApiUrl = "https://api.example.com/auth/token"
+                    // Make an API request to get the token
+                    def tokenResponse = sh(
+                        script: """
+                            curl -X POST "${tokenApiUrl}" \
+                            -H "Content-Type: application/json" \
+                            -d '{ "username": "${params.USERNAME}", "password": "${params.PASSWORD}" }' \
+                            --silent --show-error --fail
+                        """,
+                        returnStdout: true
+                    ).trim()
+                    
+                    // Parse the JSON response to extract the token
+                    def token = readJSON(text: tokenResponse).token
+                    echo "Generated Token: ${token}"
+
+                    // Store the token for the next stage
+                    env.TOKEN = token
+                }
+            }
+        }
+
+        stage('Delete Resource') {
+            steps {
+                script {
+                    // Define the API URL for deleting the resource
+                    def deleteApiUrl = "https://api.example.com/resources/${params.ID}"
+                    
+                    // Make an API request to delete the resource using the generated token
+                    sh """
+                        curl -X DELETE "${deleteApiUrl}" \
+                        -H "Authorization: Bearer ${env.TOKEN}" \
+                        --silent --show-error --fail
+                    """
+                    echo "Resource with ID ${params.ID} has been deleted."
+                }
+            }
+        }
+    }
+}
+```
