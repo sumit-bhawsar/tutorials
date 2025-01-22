@@ -1,4 +1,7 @@
 ```
+grep -E '(GET|POST|PUT|PATCH|DELETE)\s+/[a-zA-Z0-9-]+/[^0-9/][^\s]*' logfile.log
+```
+```
 import subprocess
 
 # Full path to your JAR file
