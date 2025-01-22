@@ -1,4 +1,17 @@
 ```
+#!/bin/bash
+
+# Run the JAR and interact with it
+java -jar path/to/your-jar-file.jar | while IFS= read -r line; do
+    echo "Process says: $line" # Print the process output
+    
+    # Check for a specific message and send input
+    if [[ "$line" == *"specific message"* ]]; then
+        echo "your-input-string" > /proc/$(pgrep -n java)/fd/0
+    fi
+done
+```
+```
 import java.io.*;
 
 public class ProcessInteraction {
