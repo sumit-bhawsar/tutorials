@@ -1,4 +1,42 @@
 ```
+import subprocess
+
+# Full path to your JAR file
+jar_path = r"C:\path\to\your-jar-file.jar"
+
+# Define the Java command
+command = ["java", "-jar", jar_path]
+
+# Start the Java process
+process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+# Read the process output line by line
+while True:
+    # Read output from the process
+    output = process.stdout.readline()
+    
+    if output == '' and process.poll() is not None:
+        break  # Break when the process finishes
+
+    if output:
+        print(output.strip())  # Print the output (you can also log this if needed)
+
+        # Check if the output contains "Enter username"
+        if "Enter username" in output:
+            process.stdin.write("myUsername\n")  # Send username input
+            process.stdin.flush()
+
+        # Check if the output contains "Enter password"
+        elif "Enter password" in output:
+            process.stdin.write("myPassword\n")  # Send password input
+            process.stdin.flush()
+
+# Wait for the process to finish
+process.wait()
+
+print("Java process completed.")
+```
+```
 #!/bin/bash
 
 # Run the JAR and interact with it
