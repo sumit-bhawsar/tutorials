@@ -1,4 +1,44 @@
+```
+import java.io.*;
 
+public class ProcessInteraction {
+    public static void main(String[] args) {
+        try {
+            // Define the command you want to run
+            ProcessBuilder processBuilder = new ProcessBuilder("your-command");
+            processBuilder.redirectErrorStream(true); // Merge error stream with the output stream
+            
+            // Start the process
+            Process process = processBuilder.start();
+            
+            // Get input and output streams
+            BufferedReader processOutput = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            BufferedWriter processInput = new BufferedWriter(new OutputStreamWriter(process.getOutputStream()));
+
+            String line;
+            while ((line = processOutput.readLine()) != null) {
+                System.out.println("Process says: " + line); // Print the output for debugging
+                
+                // Check for a specific message to trigger input
+                if (line.contains("specific message")) {
+                    processInput.write("your-input-string\n");
+                    processInput.flush(); // Ensure the input is sent to the process
+                }
+            }
+
+            // Wait for the process to complete
+            int exitCode = process.waitFor();
+            System.out.println("Process exited with code: " + exitCode);
+
+            // Close the streams
+            processOutput.close();
+            processInput.close();
+        } catch (IOException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
 The Courses
 ==============================
 
