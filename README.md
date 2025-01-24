@@ -1,4 +1,66 @@
 ```
+pipeline {
+    agent any
+    environment {
+        EUREKA_SERVER_URL = "http://your-eureka-server:port/eureka/apps" // Replace with your Eureka server URL
+        REGISTRAR_URL = "http://your-registrar-service/api/check" // Replace with your registrar's API endpoint
+    }
+    stages {
+        stage('Get Eureka Instances and Validate') {
+            steps {
+                script {
+                    // Make an HTTP GET request to Eureka's /apps endpoint
+                    def eurekaResponse = httpRequest(
+                        url: "${EUREKA_SERVER_URL}",
+                        acceptType: 'APPLICATION_JSON',
+                        httpMode: 'GET'
+                    )
+                    
+                    // Parse the Eureka response (assumes JSON format)
+                    def eurekaData = readJSON text: eurekaResponse.content
+                    def applications = eurekaData.applications.application
+
+                    // Iterate through registered applications in Eureka
+                    applications.each { app ->
+                        // Extract service name (api-name-api-version)
+                        def serviceName = app.name // Example: "abc-api-1.0-1.15"
+                        echo "Processing service: ${serviceName}"
+
+                        // Match the api-name and api-version using regex
+                        def matcher = serviceName =~ /(.*)-(\d+\.\d+(\.\d+)?)$/
+                        if (matcher.matches()) {
+                            def apiName = matcher[0][1] // First capturing group (api-name)
+                            def apiVersion = matcher[0][2] // Second capturing group (api-version)
+                            echo "Extracted API Name: ${apiName}, API Version: ${apiVersion}"
+
+                            // Call registrar API to check if the service exists
+                            def registrarResponse = httpRequest(
+                                url: "${REGISTRAR_URL}",
+                                httpMode: 'POST',
+                                acceptType: 'APPLICATION_JSON',
+                                contentType: 'APPLICATION_JSON',
+                                requestBody: groovy.json.JsonOutput.toJson([
+                                    apiName   : apiName,
+                                    apiVersion: apiVersion
+                                ])
+                            )
+
+                            // Parse registrar response
+                            def registrarData = readJSON text: registrarResponse.content
+                            if (registrarData.exists) {
+                                echo "Service ${serviceName} exists in registrar."
+                            } else {
+                                echo "Service ${serviceName} does NOT exist in registrar."
+                            }
+                        } else {
+                            echo "Invalid service name format: ${serviceName}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 ```
 
