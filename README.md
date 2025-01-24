@@ -1,14 +1,17 @@
-```
-pipeline {
+```pipeline {
     agent any
     environment {
         EUREKA_SERVER_URL = "http://your-eureka-server:port/eureka/apps" // Replace with your Eureka server URL
         REGISTRAR_URL = "http://your-registrar-service/api/check" // Replace with your registrar's API endpoint
     }
     stages {
-        stage('Get Eureka Instances and Validate') {
+        stage('Get Eureka Instances') {
             steps {
                 script {
+                    // Initialize lists to track found and not found APIs
+                    def foundApis = []
+                    def notFoundApis = []
+
                     // Make an HTTP GET request to Eureka's /apps endpoint
                     def eurekaResponse = httpRequest(
                         url: "${EUREKA_SERVER_URL}",
@@ -20,47 +23,78 @@ pipeline {
                     def eurekaData = readJSON text: eurekaResponse.content
                     def applications = eurekaData.applications.application
 
-                    // Iterate through registered applications in Eureka
-                    applications.each { app ->
-                        // Extract service name (api-name-api-version)
-                        def serviceName = app.name // Example: "abc-api-1.0-1.15"
-                        echo "Processing service: ${serviceName}"
+                    // Divide applications into 10 groups
+                    def groups = applications.collate((int) Math.ceil(applications.size() / 10.0))
 
-                        // Match the api-name and api-version using regex
-                        def matcher = serviceName =~ /(.*)-(\d+\.\d+(\.\d+)?)$/
-                        if (matcher.matches()) {
-                            def apiName = matcher[0][1] // First capturing group (api-name)
-                            def apiVersion = matcher[0][2] // Second capturing group (api-version)
-                            echo "Extracted API Name: ${apiName}, API Version: ${apiVersion}"
+                    // Define parallel tasks for each group
+                    def tasks = [:]
 
-                            // Call registrar API to check if the service exists
-                            def registrarResponse = httpRequest(
-                                url: "${REGISTRAR_URL}",
-                                httpMode: 'POST',
-                                acceptType: 'APPLICATION_JSON',
-                                contentType: 'APPLICATION_JSON',
-                                requestBody: groovy.json.JsonOutput.toJson([
-                                    apiName   : apiName,
-                                    apiVersion: apiVersion
-                                ])
-                            )
+                    groups.eachWithIndex { group, index ->
+                        tasks["Thread-${index + 1}"] = {
+                            group.each { app ->
+                                def serviceName = app.name // Example: "abc-api-1.0-1.15"
+                                echo "Processing service: ${serviceName} in Thread-${index + 1}"
 
-                            // Parse registrar response
-                            def registrarData = readJSON text: registrarResponse.content
-                            if (registrarData.exists) {
-                                echo "Service ${serviceName} exists in registrar."
-                            } else {
-                                echo "Service ${serviceName} does NOT exist in registrar."
+                                // Match the api-name and api-version using regex
+                                def regex = /^(.*?)-(\d+\.\d+.*)$/
+                                def matchResult = (serviceName =~ regex)
+
+                                if (matchResult.matches()) {
+                                    // Convert matcher to serializable structure
+                                    def matchList = matchResult[0] as List
+                                    def apiName = matchList[1] // First capturing group (api-name)
+                                    def apiVersion = matchList[2] // Second capturing group (api-version)
+                                    matchResult = null // Release matcher
+
+                                    echo "Extracted API Name: ${apiName}, API Version: ${apiVersion}"
+
+                                    // Call registrar API to check if the service exists
+                                    def registrarResponse = httpRequest(
+                                        url: "${REGISTRAR_URL}",
+                                        httpMode: 'POST',
+                                        acceptType: 'APPLICATION_JSON',
+                                        contentType: 'APPLICATION_JSON',
+                                        requestBody: groovy.json.JsonOutput.toJson([
+                                            apiName   : apiName,
+                                            apiVersion: apiVersion
+                                        ])
+                                    )
+
+                                    // Parse registrar response
+                                    def registrarData = readJSON text: registrarResponse.content
+                                    if (registrarData.exists) {
+                                        echo "Service ${serviceName} exists in registrar."
+                                        synchronized(foundApis) {
+                                            foundApis.add(apiName) // Add to found list
+                                        }
+                                    } else {
+                                        echo "Service ${serviceName} does NOT exist in registrar."
+                                        synchronized(notFoundApis) {
+                                            notFoundApis.add(apiName) // Add to not found list
+                                        }
+                                    }
+                                } else {
+                                    echo "Invalid service name format: ${serviceName}"
+                                    synchronized(notFoundApis) {
+                                        notFoundApis.add(serviceName) // Treat as not found
+                                    }
+                                }
                             }
-                        } else {
-                            echo "Invalid service name format: ${serviceName}"
                         }
                     }
+
+                    // Execute all tasks in parallel
+                    parallel tasks
+
+                    // Display the results after parallel execution
+                    echo "APIs Found in Registrar: ${foundApis}"
+                    echo "APIs Not Found in Registrar: ${notFoundApis}"
                 }
             }
         }
     }
 }
+
 
 ```
 
